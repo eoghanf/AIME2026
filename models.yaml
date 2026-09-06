@@ -1,0 +1,116 @@
+# models.yaml
+# Models to evaluate on 2026 AIME I
+# All models via Ollama unless otherwise specified
+#
+# runs: how many successful eval logs to collect per model (default 1).
+# main.py counts existing successes and only runs the shortfall.
+#
+# Non-Ollama backends: google (GOOGLE_API_KEY), anthropic (ANTHROPIC_API_KEY),
+# openai (OPENAI_API_KEY + optional per-model base_url for local OpenAI-compatible
+# servers, e.g. llama-server).
+
+models:
+
+  # ── New: released after the repo's March 2026 update ────────────────────────
+  # Granite 4.2-8B (IBM, 2026-08-07) — native Ollama, thinking on by default.
+  # NOTE: evaluate before K2-Horizon — llama-server holds ~6GB VRAM and both
+  # cannot fit in the 8GB GPU simultaneously. Stop llama-server for Granite runs.
+  - family: granite4.2
+    backend: ollama
+    runs: 4
+    models:
+      - granite4.2:8b
+
+  # K2-Horizon-7B (IFM/MBZUAI, 2026-09-01) — served via llama-server (IFM fork),
+  # not Ollama: the k2-horizon arch is not in upstream llama.cpp/Ollama.
+  # GGUF: community Q4_K_M of IFM/K2-Horizon-7B (bombman/K2-Horizon-7B-GGUF)
+  # Start: tools/k2-llama.cpp/build-cuda/bin/llama-server -m <gguf> -c 32768 \
+  #          -fa on --cache-type-k q8_0 --cache-type-v q8_0 --port 8080
+  - family: k2-horizon
+    backend: openai
+    base_url: http://localhost:8080/v1
+    runs: 4
+    models:
+      - K2-Horizon-7B
+
+  # ── 1 existing run → needs 3 more ─────────────────────────────────────────
+  - family: deepseek-r1-0528
+    backend: ollama
+    runs: 4
+    models:
+      - deepseek-r1:8b-0528-qwen3-q4_K_M
+
+  # ── 2 existing runs → needs 2 more ────────────────────────────────────────
+  - family: klear-reasoner
+    backend: ollama
+    runs: 4
+    models:
+      - Kwai-Klear/Klear-Reasoner-8B
+
+  - family: openreasoning-nemotron
+    backend: ollama
+    runs: 4
+    models:
+      - nvidia/OpenReasoning-Nemotron-7B
+      - ?nvidia/OpenReasoning-Nemotron-1.5B
+      - ?nvidia/AceReason-Nemotron-1.1-7B
+
+  - family: rnj-1
+    backend: ollama
+    runs: 4
+    models:
+      - rnj-1:8b
+
+  # ── 3 existing runs → needs 1 more ────────────────────────────────────────
+  - family: deepseek-r1
+    backend: ollama
+    runs: 4
+    models:
+      - deepseek-r1:1.5b
+      - ?deepseek-r1-distill-qwen-7b
+
+  - family: lfm2.5-thinking
+    backend: ollama
+    runs: 4
+    models:
+      - lfm2.5-thinking:1.2b
+
+  - family: openthinker3
+    backend: ollama
+    runs: 4
+    models:
+      - open-thoughts/OpenThinker3-7B
+
+  # ── 4 existing runs → already done ────────────────────────────────────────
+  # Community Ollama upload (not in official library — use with caution)
+  # - family: polaris
+  #   backend: ollama
+  #   runs: 4
+  #   models:
+  #     - lucifers/Polaris-4B-Preview.Q8_0:latest
+
+  # ── GGUF models (not on official Ollama — create once via ollama create) ──
+  # Setup: huggingface-cli download <gguf-repo> --include "*.Q4_K_M.gguf"
+  #        echo "FROM /path/to/file.gguf" > Modelfile
+  #        ollama create <model-tag> -f Modelfile
+  # After creation these are normal Ollama models. Prefix names with ? to skip
+  # until created locally.
+
+  # ── Cloud models ───────────────────────────────────────────────────────────
+  - family: gemini
+    backend: google
+    runs: 4
+    models:
+      - ?gemini-3.1-pro
+
+  - family: claude
+    backend: anthropic
+    runs: 4
+    models:
+      - ?claude-sonnet-4-6
+
+  - family: gpt
+    backend: openai
+    runs: 4
+    models:
+      - ?gpt-5.2
