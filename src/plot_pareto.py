@@ -34,8 +34,11 @@ MODEL_DISPLAY = {
     "ollama/lucifers/Polaris-4B-Preview.Q8_0:latest": "POLARIS-4B-Preview",
     "ollama/nvidia/AceReason-Nemotron-1.1-7B":        "AceReason-Nemotron-1.1-7B",
     "ollama/nvidia/OpenReasoning-Nemotron-1.5B":      "OpenReasoning-Nemotron-1.5B",
+    "ollama/nvidia/OpenReasoning-Nemotron-7B":        "OpenReasoning-Nemotron-7B",
     "ollama/open-thoughts/OpenThinker3-7B":           "OpenThinker3-7B",
     "ollama/deepseek-r1:1.5b":                        "deepseek-r1:1.5b",
+    "ollama/deepseek-r1:8b-0528-qwen3-q4_K_M":       "DeepSeek-R1-0528-8B",
+    "ollama/Kwai-Klear/Klear-Reasoner-8B":            "Klear-Reasoner-8B",
     "ollama/rnj-1:8b":                                "rnj-1:8b",
     "ollama/lfm2.5-thinking:1.2b":                    "lfm2.5-thinking:1.2b",
 }
@@ -44,8 +47,11 @@ MODEL_COLOURS = {
     "POLARIS-4B-Preview":             "#A3D97A",
     "AceReason-Nemotron-1.1-7B":      "#6AC8EB",
     "OpenReasoning-Nemotron-1.5B":    "#F4B94A",
+    "OpenReasoning-Nemotron-7B":      "#F4B94A",
     "OpenThinker3-7B":                "#C8A87A",
     "deepseek-r1:1.5b":               "#F4896A",
+    "DeepSeek-R1-0528-8B":            "#F4896A",
+    "Klear-Reasoner-8B":              "#B0A0E8",
     "rnj-1:8b":                       "#9B59B6",
     "lfm2.5-thinking:1.2b":           "#58D68D",
 }
@@ -123,6 +129,16 @@ def plot(log_dir: Path, out: Path) -> None:
             linestyle="--", zorder=2, label="Pareto frontier")
     ax.fill_between(fx, fy, step="post", alpha=0.08, color="#E74C3C", zorder=1)
 
+    # Per-model label placement overrides for crowded regions of the chart.
+    # Keys are display names; values override (dx_mult, dy, ha, va).
+    LABEL_PLACEMENT = {
+        "DeepSeek-R1-0528-8B":         {"dy": 1.6},
+        "AceReason-Nemotron-1.1-7B":   {"dx_mult": -0.03, "dy": 1.6, "ha": "right"},
+        "Klear-Reasoner-8B":           {"dy": -2.0, "va": "top"},
+        "OpenReasoning-Nemotron-7B":   {"dx_mult": 0.02, "dy": -2.2, "va": "top"},
+        "OpenThinker3-7B":             {"dx_mult": 0.02, "dy": -2.2, "va": "top"},
+    }
+
     # Scatter all models
     frontier_set = set(frontier_pts)
     for name, params, acc in sorted(models, key=lambda x: x[1]):
@@ -135,16 +151,18 @@ def plot(log_dir: Path, out: Path) -> None:
                    linewidths=1.5 if on_frontier else 0.5,
                    zorder=5)
 
-        # Label — nudge to avoid overlap
-        x_off = params * 0.04
-        y_off = 1.2
+        # Label — per-model placement, with a default nudge to the upper right
+        placement = LABEL_PLACEMENT.get(name, {})
+        x_off = params * placement.get("dx_mult", 0.04)
+        y_off = placement.get("dy", 1.2)
         ax.annotate(
             name,
             (params, acc),
             xytext=(params + x_off, acc + y_off),
             fontsize=8,
             color="#222",
-            va="bottom",
+            ha=placement.get("ha", "left"),
+            va=placement.get("va", "bottom"),
             path_effects=[pe.withStroke(linewidth=2, foreground="#F5F5F5")],
         )
 

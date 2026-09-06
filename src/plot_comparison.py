@@ -31,9 +31,12 @@ AIME_2025 = {
 
 # ── Model name mapping: eval log model string → display name ──────────────────
 MODEL_DISPLAY = {
+    "ollama/Kwai-Klear/Klear-Reasoner-8B":            "Klear-Reasoner-8B",
+    "ollama/deepseek-r1:8b-0528-qwen3-q4_K_M":       "DeepSeek-R1-0528-8B",
     "ollama/lucifers/Polaris-4B-Preview.Q8_0:latest": "POLARIS-4B-Preview",
     "ollama/nvidia/AceReason-Nemotron-1.1-7B":        "AceReason-Nemotron-1.1-7B",
     "ollama/nvidia/OpenReasoning-Nemotron-1.5B":      "OpenReasoning-Nemotron-1.5B",
+    "ollama/nvidia/OpenReasoning-Nemotron-7B":        "OpenReasoning-Nemotron-7B",
     "ollama/open-thoughts/OpenThinker3-7B":           "OpenThinker3-7B",
     "ollama/deepseek-r1:1.5b":                        "DeepSeek-R1:1.5b",
     "ollama/rnj-1:8b":                                "rnj-1:8b",
@@ -66,8 +69,8 @@ ESTIMATE_2026 = {
 ESTIMATE_HATCH = "////"
 
 
-def load_2026(log_dir: Path) -> dict[str, float]:
-    """Return {display_name: mean_score_%} from successful eval logs."""
+def load_2026(log_dir: Path) -> tuple[dict[str, float], dict[str, int]]:
+    """Return ({display_name: mean_score_%}, {display_name: n_runs}) from successful eval logs."""
     runs: dict[str, list[float]] = defaultdict(list)
     for path in sorted(log_dir.glob("*.eval")):
         try:
@@ -87,11 +90,13 @@ def load_2026(log_dir: Path) -> dict[str, float]:
             runs[display].append(correct / len(samples) * 100)
         except Exception:
             continue
-    return {name: sum(scores) / len(scores) for name, scores in runs.items()}
+    means = {name: sum(scores) / len(scores) for name, scores in runs.items()}
+    n_runs = {name: len(scores) for name, scores in runs.items()}
+    return means, n_runs
 
 
 def plot(log_dir: Path, out: Path) -> None:
-    aime_2026 = load_2026(log_dir)
+    aime_2026, run_counts = load_2026(log_dir)
 
     # Merge measured 2026 results with estimates for unmeasured models
     aime_2026_full = {**ESTIMATE_2026, **aime_2026}  # measured values override estimates
@@ -147,6 +152,18 @@ def plot(log_dir: Path, out: Path) -> None:
                 fontsize=7.5, fontweight="bold",
                 color="#333333",
             )
+            # Show run count at the bottom of 2026 bars (measured runs only).
+            # Rotated 90° so adjacent labels don't collide at this bar width.
+            if gi == 1 and model in run_counts:
+                n = run_counts[model]
+                ax.text(
+                    x, 1.5,
+                    f"n={n}",
+                    ha="center", va="bottom",
+                    rotation=90,
+                    fontsize=8, fontweight="bold", color="white",
+                    zorder=4,
+                )
 
     # X-axis group labels — no ticks
     ax.set_xticks(group_centers)

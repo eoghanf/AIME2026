@@ -16,30 +16,38 @@ Our results are consistent with, and in several cases directly verify, the bench
 
 | Model | Params | Runs | Mean score | Accuracy |
 |---|---|---|---|---|
+| DeepSeek-R1-0528-8B | 8B | 5 | 10.4 / 15 | **69.3%** |
 | AceReason-Nemotron-1.1-7B | 7B | 3 | 10.0 / 15 | **66.7%** |
 | POLARIS-4B-Preview | 4B | 4 | 9.7 / 15 | **65.0%** |
-| rnj-1:8b | 8B | 2 | 5.5 / 15 | 36.7% |
-| DeepSeek-R1:1.5b | 1.5B | 3 | 4.7 / 15 | 31.1% |
-| lfm2.5-thinking:1.2b | 1.2B | 3 | 3.3 / 15 | 22.2% |
-| OpenThinker3-7B | 7B | 3 | 3.3 / 15 | 22.2% |
+| Klear-Reasoner-8B | 8B | 6 | 9.7 / 15 | 64.4% |
+| OpenReasoning-Nemotron-7B | 7B | 6 | 9.2 / 15 | 61.1% |
+| rnj-1:8b | 8B | 6 | 4.3 / 15 | 28.9% |
+| DeepSeek-R1:1.5b | 1.5B | 7 | 3.9 / 15 | 25.7% |
+| OpenThinker3-7B | 7B | 7 | 3.6 / 15 | 23.8% |
+| lfm2.5-thinking:1.2b | 1.2B | 7 | 3.2 / 15 | 21.0% |
 | OpenReasoning-Nemotron-1.5B | 1.5B | 3 | 2.7 / 15 | 17.8% |
 
-Scores are averaged across multiple independent runs (single sample per problem per run). Evaluations for Klear-Reasoner-8B, OpenReasoning-Nemotron-7B, and DeepSeek-R1-0528-8B are in progress.
+Scores are averaged across multiple independent runs (single sample per problem per run).
 
 ### Comparison with published AIME 2025 results
 
-The chart below compares published AIME 2025 performance (Avg@64, from the Klear-Reasoner paper [[1]](#references)) against our independently measured AIME 2026 I scores. Striped bars are placeholders pending evaluation.
+The chart below compares published AIME 2025 performance (Avg@64, from the Klear-Reasoner paper [[1]](#references)) against our independently measured AIME 2026 I scores.
 
 ![AIME 2025 vs 2026 I](results/aime_comparison.png)
 
-The two models present in both datasets validate well:
+The five models present in both datasets validate well:
 
-- **POLARIS-4B-Preview**: 79.4% on AIME 2025 (Avg@64) → 65.0% on AIME 2026 I. A modest drop consistent with the 2026 exam being unseen.
+- **DeepSeek-R1-0528-8B**: 76.3% on AIME 2025 (Avg@64) → 69.3% on AIME 2026 I — the strongest result in our evaluation.
 - **AceReason-Nemotron-1.1-7B**: 64.8% on AIME 2025 → 66.7% on AIME 2026 I. Remarkably consistent across exam years.
+- **POLARIS-4B-Preview**: 79.4% on AIME 2025 → 65.0% on AIME 2026 I. A modest drop consistent with the 2026 exam being unseen.
+- **Klear-Reasoner-8B**: 83.2% on AIME 2025 → 64.4% on AIME 2026 I.
+- **OpenReasoning-Nemotron-7B**: 78.2% on AIME 2025 → 61.1% on AIME 2026 I.
+
+The larger drops for Klear-Reasoner-8B and OpenReasoning-Nemotron-7B are consistent with the 2026 exam being unseen, single-sample variance (see the comparability note below), and Q4_K_M quantization on locally run models.
 
 ### Pareto frontier: accuracy vs. model size
 
-POLARIS-4B-Preview is the standout efficiency result — near-top accuracy at half the parameter count of the 7–8B models, making it Pareto-dominant over every larger model tested.
+DeepSeek-R1-0528-8B posts the top raw accuracy (69.3%), while POLARIS-4B-Preview is the standout efficiency result — 65.0% at roughly half the parameter count of the 7–8B models, sitting on the Pareto frontier alongside it.
 
 ![Pareto frontier](results/pareto.png)
 
