@@ -5,6 +5,11 @@
 # runs: how many successful eval logs to collect per model (default 1).
 # main.py counts existing successes and only runs the shortfall.
 #
+# Seeding: each run slot gets a deterministic, recorded sampling seed
+# (seed = 1234 + run_number, i.e. runs 1-4 → 1235-1238). The seed is stored
+# in each eval log's metadata; rerunning a run slot reuses its seed.
+# Sampling is fixed at temperature 1.0 / top_p 0.95 for all models.
+#
 # Non-Ollama backends: google (GOOGLE_API_KEY), anthropic (ANTHROPIC_API_KEY),
 # openai (OPENAI_API_KEY + optional per-model base_url for local OpenAI-compatible
 # servers, e.g. llama-server).

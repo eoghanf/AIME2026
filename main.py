@@ -52,6 +52,13 @@ load_dotenv()
 
 OLLAMA_NUM_PARALLEL = 1
 
+# Per-run sampling seed: seed = SEED_BASE + run_number (1-based), so every run
+# slot has a distinct, reproducible seed (e.g. runs 1-4 → 1235-1238). Recorded
+# in each eval log's metadata; rerunning a run slot reuses the same seed.
+SEED_BASE = 1234
+RUN_TEMPERATURE = 1.0
+RUN_TOP_P = 0.95
+
 DATA_FILE = ROOT / "data" / "aime_2026_i.json"
 RESULTS_DIR = ROOT / "results"
 LOG_DIR = RESULTS_DIR / "AIME2026"
@@ -156,7 +163,10 @@ def find_incomplete_run(log_dir: Path, inspect_model: str) -> Path | None:
     return newest
 
 
-def resume_run(partial_path: Path, inspect_model: str, log_dir: Path) -> EvalLog | None:
+def resume_run(
+    partial_path: Path, inspect_model: str, log_dir: Path,
+    run_seed: int, run_number: int,
+) -> EvalLog | None:
     """
     Continue an interrupted run: evaluate only the problems missing from the
     partial log, merge the results into it, and re-write it as a successful
@@ -178,6 +188,10 @@ def resume_run(partial_path: Path, inspect_model: str, log_dir: Path) -> EvalLog
         aime_2026_i(problem_ids=remaining),
         model=inspect_model,
         log_dir=str(log_dir),
+        seed=run_seed,
+        temperature=RUN_TEMPERATURE,
+        top_p=RUN_TOP_P,
+        metadata={"seed": run_seed, "run_number": run_number, "resumed": True},
         log_buffer=1,
         display="log",
     )
@@ -529,14 +543,25 @@ def main() -> None:
                 break
 
         for run_i in range(runs_to_do):
+            # Run slot number and its reproducible seed
+            run_number = existing_runs + run_i + 1
+            run_seed = SEED_BASE + run_number
+
             # Route this entry to its own OpenAI-compatible endpoint (e.g.
-            # local llama-server) without disturbing the cloud OPENAI_BASE_URL
+            # local llama-server) without disturbing the cloud OPENAI_BASE_URL,
+            # and pass sampling/seed settings to the task's native Ollama path.
             prev_base_url = os.environ.get("OPENAI_BASE_URL")
+            prev_seed_env = os.environ.get("AIME_RUN_SEED")
+            prev_temp_env = os.environ.get("AIME_TEMP")
+            prev_topp_env = os.environ.get("AIME_TOP_P")
             if base_url:
                 os.environ["OPENAI_BASE_URL"] = base_url
+            os.environ["AIME_RUN_SEED"] = str(run_seed)
+            os.environ["AIME_TEMP"] = str(RUN_TEMPERATURE)
+            os.environ["AIME_TOP_P"] = str(RUN_TOP_P)
             try:
                 log.info("━" * 60)
-                log.info("EVALUATING: %s (run %d/%d)", inspect_model, existing_runs + run_i + 1, target_runs)
+                log.info("EVALUATING: %s (run %d/%d)", inspect_model, run_number, target_runs)
                 log.info("━" * 60)
 
                 # Resume an interrupted run if one exists: evaluate only the
@@ -545,7 +570,10 @@ def main() -> None:
                 resumed = False
                 if partial_path is not None:
                     try:
-                        ilog = resume_run(partial_path, inspect_model, LOG_DIR)
+                        ilog = resume_run(
+                            partial_path, inspect_model, LOG_DIR,
+                            run_seed, run_number,
+                        )
                         if ilog is not None:
                             log_run_result(inspect_model, ilog)
                             evaluated += 1
@@ -563,6 +591,10 @@ def main() -> None:
                         aime_2026_i(),
                         model=inspect_model,
                         log_dir=str(LOG_DIR),
+                        seed=run_seed,
+                        temperature=RUN_TEMPERATURE,
+                        top_p=RUN_TOP_P,
+                        metadata={"seed": run_seed, "run_number": run_number},
                         log_buffer=1,
                         display="log",
                     )
@@ -574,6 +606,18 @@ def main() -> None:
             except Exception as e:
                 log.error("Evaluation failed for %s: %s", inspect_model, e)
             finally:
+                if prev_seed_env is None:
+                    os.environ.pop("AIME_RUN_SEED", None)
+                else:
+                    os.environ["AIME_RUN_SEED"] = prev_seed_env
+                if prev_temp_env is None:
+                    os.environ.pop("AIME_TEMP", None)
+                else:
+                    os.environ["AIME_TEMP"] = prev_temp_env
+                if prev_topp_env is None:
+                    os.environ.pop("AIME_TOP_P", None)
+                else:
+                    os.environ["AIME_TOP_P"] = prev_topp_env
                 if base_url:
                     if prev_base_url is None:
                         os.environ.pop("OPENAI_BASE_URL", None)

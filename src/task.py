@@ -12,6 +12,7 @@ Or run the full pipeline via main.py.
 
 import json
 import logging
+import os
 import re
 import time
 from pathlib import Path
@@ -110,13 +111,24 @@ def generate_with_thinking():
 
         t0 = time.monotonic()
         async with httpx.AsyncClient(timeout=None) as client:
+            # Sampling params come from the harness (main.py) via env so runs
+            # are independent of the Ollama Modelfile's defaults and fully
+            # reproducible when AIME_RUN_SEED is set.
+            options = {"num_predict": MAX_TOKENS, "num_ctx": MAX_TOKENS}
+            if os.environ.get("AIME_TEMP"):
+                options["temperature"] = float(os.environ["AIME_TEMP"])
+            if os.environ.get("AIME_TOP_P"):
+                options["top_p"] = float(os.environ["AIME_TOP_P"])
+            seed = os.environ.get("AIME_RUN_SEED")
+            if seed and seed.lstrip("-").isdigit():
+                options["seed"] = int(seed)
             resp = await client.post(
                 OLLAMA_NATIVE_URL,
                 json={
                     "model": ollama_model,
                     "messages": messages,
                     "stream": False,
-                    "options": {"num_predict": MAX_TOKENS, "num_ctx": MAX_TOKENS},
+                    "options": options,
                 },
             )
             resp.raise_for_status()
