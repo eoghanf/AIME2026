@@ -44,7 +44,7 @@ MAX_TOKENS = 32768
 
 # ── Dataset ───────────────────────────────────────────────────────────────────
 
-def _load_dataset() -> MemoryDataset:
+def _load_dataset(problem_ids: list[int] | None = None) -> MemoryDataset:
     if not DATA_FILE.exists():
         raise FileNotFoundError(
             f"{DATA_FILE} not found. Run 'python src/scrape.py' first."
@@ -58,6 +58,7 @@ def _load_dataset() -> MemoryDataset:
             metadata={"problem_id": p["id"]},
         )
         for p in data["problems"]
+        if problem_ids is None or p["id"] in problem_ids
     ]
     return MemoryDataset(samples, name="2026_AIME_I")
 
@@ -230,10 +231,16 @@ def aime_integer_scorer():
 # ── Task ──────────────────────────────────────────────────────────────────────
 
 @task
-def aime_2026_i():
-    """Evaluate a model on all 15 problems from the 2026 AIME I."""
+def aime_2026_i(problem_ids: list[int] | None = None):
+    """Evaluate a model on problems from the 2026 AIME I.
+
+    Args:
+        problem_ids: optional subset of problem numbers (1-15) to evaluate.
+            Defaults to all 15 problems. Used by main.py to resume an
+            interrupted run from the last completed problem.
+    """
     return Task(
-        dataset=_load_dataset(),
+        dataset=_load_dataset(problem_ids),
         solver=generate_with_thinking(),
         scorer=aime_integer_scorer(),
         config=GenerateConfig(max_tokens=MAX_TOKENS, max_connections=1),

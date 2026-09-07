@@ -44,7 +44,8 @@ log.propagate = False  # don't let inspect_ai's root-level setLevel suppress us
 import yaml
 from dotenv import load_dotenv
 from inspect_ai import eval as inspect_eval
-from inspect_ai.log import read_eval_log
+from inspect_ai.log import read_eval_log, write_eval_log
+from inspect_ai.log._log import EvalLog
 from inspect_ai.scorer import CORRECT
 
 load_dotenv()
@@ -53,6 +54,7 @@ OLLAMA_NUM_PARALLEL = 1
 
 DATA_FILE = ROOT / "data" / "aime_2026_i.json"
 RESULTS_DIR = ROOT / "results"
+LOG_DIR = RESULTS_DIR / "AIME2026"
 MODELS_FILE = ROOT / "models.yaml"
 
 # src/ must be on path for task.py import
@@ -116,7 +118,7 @@ def count_results(inspect_model: str) -> int:
     """
     count = 0
     seen: set[Path] = set()
-    for d in (RESULTS_DIR, RESULTS_DIR / "AIME2026"):
+    for d in (RESULTS_DIR, LOG_DIR):
         if not d.exists():
             continue
         for f in d.glob("*.eval"):
@@ -130,6 +132,94 @@ def count_results(inspect_model: str) -> int:
             except Exception:
                 continue
     return count
+
+
+# ── Interrupted-run resume ────────────────────────────────────────────────────
+
+def find_incomplete_run(log_dir: Path, inspect_model: str) -> Path | None:
+    """
+    Return the newest non-success .eval log for this model that has at least
+    one flushed sample, so an interrupted run can resume instead of restarting.
+    """
+    newest: Path | None = None
+    for f in log_dir.glob("*.eval"):
+        try:
+            ilog = read_eval_log(str(f), header_only=False)
+        except Exception:
+            continue
+        if ilog.eval.model != inspect_model:
+            continue
+        if ilog.status == "success" or not ilog.samples:
+            continue
+        if newest is None or f.name > newest.name:
+            newest = f
+    return newest
+
+
+def resume_run(partial_path: Path, inspect_model: str, log_dir: Path) -> EvalLog | None:
+    """
+    Continue an interrupted run: evaluate only the problems missing from the
+    partial log, merge the results into it, and re-write it as a successful
+    full-run log. Returns the merged EvalLog, or None if the completion run
+    failed (in which case the partial log is kept for a later retry).
+    """
+    partial = read_eval_log(str(partial_path))
+    done = {
+        int(s.id) for s in (partial.samples or [])
+        if s.id and s.id.isdigit() and 1 <= int(s.id) <= 15
+    }
+    remaining = [i for i in range(1, 16) if i not in done]
+    log.info(
+        "RESUME %s: %d/15 problems already done — running problems %s",
+        inspect_model, len(done), remaining,
+    )
+
+    comp_logs = inspect_eval(
+        aime_2026_i(problem_ids=remaining),
+        model=inspect_model,
+        log_dir=str(log_dir),
+        log_buffer=1,
+        display="log",
+    )
+    comp = comp_logs[0]
+    if comp.status != "success":
+        log.error(
+            "Resume eval failed for %s (status=%s) — partial log kept; "
+            "re-run main.py to retry the remaining problems.",
+            inspect_model, comp.status,
+        )
+        return None
+
+    merged_samples = sorted(
+        list(partial.samples or []) + list(comp.samples or []),
+        key=lambda s: int(s.id) if s.id and s.id.isdigit() else 0,
+    )
+    partial.samples = merged_samples
+    partial.status = "success"
+    partial.error = None
+    write_eval_log(partial, location=str(partial_path))
+
+    # The subset completion log must not linger — count_results would
+    # otherwise treat it as an additional run.
+    if comp.location:
+        Path(comp.location).unlink(missing_ok=True)
+
+    log.info(
+        "RESUME complete: %s merged to %d/15 samples in %s",
+        inspect_model, len(merged_samples), partial_path.name,
+    )
+    return partial
+
+
+def log_run_result(inspect_model: str, ilog: EvalLog) -> None:
+    samples = ilog.samples or []
+    total = len(samples)
+    correct = sum(
+        1 for s in samples
+        if s.scores and list(s.scores.values())[0].value == CORRECT
+    )
+    pct = 100 * correct / total if total else 0
+    log.info("RESULT: %s  %d/%d (%.1f%%)", inspect_model, correct, total, pct)
 
 
 # ── Ollama cache management ───────────────────────────────────────────────────
@@ -449,26 +539,37 @@ def main() -> None:
                 log.info("EVALUATING: %s (run %d/%d)", inspect_model, existing_runs + run_i + 1, target_runs)
                 log.info("━" * 60)
 
-                eval_logs = inspect_eval(
-                    aime_2026_i(),
-                    model=inspect_model,
-                    log_dir=str(RESULTS_DIR / "AIME2026"),
-                    display="log",
-                )
+                # Resume an interrupted run if one exists: evaluate only the
+                # missing problems and merge into the partial log.
+                partial_path = find_incomplete_run(LOG_DIR, inspect_model)
+                resumed = False
+                if partial_path is not None:
+                    try:
+                        ilog = resume_run(partial_path, inspect_model, LOG_DIR)
+                        if ilog is not None:
+                            log_run_result(inspect_model, ilog)
+                            evaluated += 1
+                            resumed = True
+                    except Exception as e:
+                        log.error(
+                            "Resume failed for %s: %s — partial log corrupted, "
+                            "deleting it and starting a fresh run.",
+                            inspect_model, e,
+                        )
+                        partial_path.unlink(missing_ok=True)
 
-                ilog = eval_logs[0]
-                samples = ilog.samples or []
-                total = len(samples)
-                correct = sum(
-                    1 for s in samples
-                    if s.scores and list(s.scores.values())[0].value == CORRECT
-                )
-                pct = 100 * correct / total if total else 0
-                log.info(
-                    "RESULT: %s  %d/%d (%.1f%%)",
-                    inspect_model, correct, total, pct,
-                )
-                evaluated += 1
+                if not resumed:
+                    eval_logs = inspect_eval(
+                        aime_2026_i(),
+                        model=inspect_model,
+                        log_dir=str(LOG_DIR),
+                        log_buffer=1,
+                        display="log",
+                    )
+
+                    ilog = eval_logs[0]
+                    log_run_result(inspect_model, ilog)
+                    evaluated += 1
 
             except Exception as e:
                 log.error("Evaluation failed for %s: %s", inspect_model, e)
