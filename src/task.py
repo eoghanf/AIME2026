@@ -110,7 +110,12 @@ def generate_with_thinking():
         ]
 
         t0 = time.monotonic()
-        async with httpx.AsyncClient(timeout=None) as client:
+        async with httpx.AsyncClient(
+            # Per-request timeout: a ceiling-truncated problem takes ~2.7h at
+            # the slowest observed rate; 4h bounds the worst legitimate case.
+            # Without this, a thrashing runner stalls the request forever.
+            timeout=httpx.Timeout(14400.0, connect=30.0)
+        ) as client:
             # Sampling params come from the harness (main.py) via env so runs
             # are independent of the Ollama Modelfile's defaults and fully
             # reproducible when AIME_RUN_SEED is set.
