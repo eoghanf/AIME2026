@@ -174,9 +174,16 @@ def resume_run(
     failed (in which case the partial log is kept for a later retry).
     """
     partial = read_eval_log(str(partial_path))
+    # Only samples with an actual score count as done — an errored sample
+    # (e.g. killed by an Ollama crash mid-generation) must be re-run, not
+    # carried into the merged log as a wrong answer.
+    scored = [
+        s for s in (partial.samples or [])
+        if s.id and s.scores
+    ]
     done = {
-        int(s.id) for s in (partial.samples or [])
-        if s.id and s.id.isdigit() and 1 <= int(s.id) <= 15
+        int(s.id) for s in scored
+        if s.id.isdigit() and 1 <= int(s.id) <= 15
     }
     remaining = [i for i in range(1, 16) if i not in done]
     log.info(
@@ -193,6 +200,8 @@ def resume_run(
         top_p=RUN_TOP_P,
         metadata={"seed": run_seed, "run_number": run_number, "resumed": True},
         log_buffer=1,
+        max_retries=3,
+        retry_on_error=2,
         display="log",
     )
     comp = comp_logs[0]
@@ -204,8 +213,10 @@ def resume_run(
         )
         return None
 
+    # Drop partial samples that carry no score (errored) — the completion
+    # re-ran those problems.
     merged_samples = sorted(
-        list(partial.samples or []) + list(comp.samples or []),
+        scored + list(comp.samples or []),
         key=lambda s: int(s.id) if s.id and s.id.isdigit() else 0,
     )
     partial.samples = merged_samples
@@ -512,6 +523,22 @@ def main() -> None:
                 log.error("SKIP %s — local server %s not reachable: %s", inspect_model, base_url, e)
                 skipped += 1
                 continue
+            # Verify the server actually serves this model — llama-server
+            # answers any model name with whatever GGUF it was started with,
+            # so a stale server would silently evaluate the wrong model.
+            try:
+                served = requests.get(f"{base_url.rstrip('/')}/models", timeout=5).json()
+                ids = [m.get("id") for m in (served.get("data") or [])]
+                if model not in ids:
+                    log.error("SKIP %s — server %s serves %s, expected '%s' "
+                              "(restart llama-server with --alias %s)",
+                              inspect_model, base_url, ids, model, model)
+                    skipped += 1
+                    continue
+            except Exception as e:
+                log.error("SKIP %s — could not verify model list at %s: %s", inspect_model, base_url, e)
+                skipped += 1
+                continue
 
         # Skip if target run count already reached
         existing_runs = count_results(inspect_model)
@@ -596,6 +623,8 @@ def main() -> None:
                         top_p=RUN_TOP_P,
                         metadata={"seed": run_seed, "run_number": run_number},
                         log_buffer=1,
+                        max_retries=3,
+                        retry_on_error=2,
                         display="log",
                     )
 
