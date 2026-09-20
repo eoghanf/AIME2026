@@ -46,7 +46,16 @@ from dotenv import load_dotenv
 from inspect_ai import eval as inspect_eval
 from inspect_ai.log import read_eval_log, write_eval_log
 from inspect_ai.log._log import EvalLog
+from inspect_ai.model._openai import OpenAIAsyncHttpxClient
 from inspect_ai.scorer import CORRECT
+
+# Long-generation client timeout for local OpenAI-compatible servers:
+# a ceiling-truncated 32K-token generation takes ~27 min at observed rates,
+# but the OpenAI SDK default timeout is 600s, which aborts and restarts the
+# generation every 10 minutes until the retry budget is exhausted.
+import httpx
+
+LLAMA_SERVER_TIMEOUT = httpx.Timeout(14400.0, connect=30.0)
 
 load_dotenv()
 
@@ -614,6 +623,16 @@ def main() -> None:
                         partial_path.unlink(missing_ok=True)
 
                 if not resumed:
+                    eval_kwargs = {}
+                    if base_url:
+                        # Route the eval through a client with a long timeout —
+                        # llama-server generations can run far past the OpenAI
+                        # SDK's 600s default (see LLAMA_SERVER_TIMEOUT).
+                        eval_kwargs["model_args"] = {
+                            "http_client": OpenAIAsyncHttpxClient(
+                                timeout=LLAMA_SERVER_TIMEOUT
+                            )
+                        }
                     eval_logs = inspect_eval(
                         aime_2026_i(),
                         model=inspect_model,
@@ -626,6 +645,7 @@ def main() -> None:
                         max_retries=3,
                         retry_on_error=2,
                         display="log",
+                        **eval_kwargs,
                     )
 
                     ilog = eval_logs[0]
