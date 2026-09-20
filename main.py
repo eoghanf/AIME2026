@@ -625,13 +625,15 @@ def main() -> None:
                 if not resumed:
                     eval_kwargs = {}
                     if base_url:
-                        # Route the eval through a client with a long timeout —
-                        # llama-server generations can run far past the OpenAI
-                        # SDK's 600s default (see LLAMA_SERVER_TIMEOUT).
+                        # Long client timeout for llama-server evals: the OpenAI
+                        # SDK's default 600s request timeout aborts and restarts
+                        # any generation longer than ~10 minutes (a ceiling-bound
+                        # 32K-token generation takes ~27 min).
                         eval_kwargs["model_args"] = {
+                            "timeout": 14400,
                             "http_client": OpenAIAsyncHttpxClient(
                                 timeout=LLAMA_SERVER_TIMEOUT
-                            )
+                            ),
                         }
                     eval_logs = inspect_eval(
                         aime_2026_i(),
