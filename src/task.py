@@ -88,6 +88,64 @@ def generate_with_thinking():
                  state.sample_id, model_name, "native" if is_ollama else "generate_fn")
 
         if not is_ollama:
+            # Native llama-server path: when main.py sets AIME_OPENAI_BASE_URL,
+            # bypass the OpenAI SDK provider entirely and call the server's
+            # /v1/chat/completions endpoint directly. This avoids the SDK's
+            # 600s default request timeout (which aborts ceiling-bound
+            # ~27-min generations) and Inspect's retry wrapper machinery.
+            llama_base = os.environ.get("AIME_OPENAI_BASE_URL")
+            if llama_base:
+                messages = [
+                    {"role": m.role, "content": m.text}
+                    for m in state.messages
+                    if hasattr(m, "text")
+                ]
+                t0 = time.monotonic()
+                body = {
+                    "model": model_name.partition("/")[-1],
+                    "messages": messages,
+                    "max_tokens": MAX_TOKENS,
+                    "temperature": float(os.environ.get("AIME_TEMP", 1.0)),
+                    "top_p": float(os.environ.get("AIME_TOP_P", 0.95)),
+                    "stream": False,
+                }
+                seed = os.environ.get("AIME_RUN_SEED")
+                if seed and seed.lstrip("-").isdigit():
+                    body["seed"] = int(seed)
+                async with httpx.AsyncClient(
+                    timeout=httpx.Timeout(14400.0, connect=30.0)
+                ) as client:
+                    resp = await client.post(
+                        f"{llama_base.rstrip('/')}/chat/completions",
+                        json=body,
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                wall_elapsed = time.monotonic() - t0
+
+                msg = data["choices"][0]["message"]
+                thinking = msg.get("reasoning_content") or ""
+                content = msg.get("content") or ""
+
+                # Reconstruct full text so the scorer can see both reasoning
+                # and answer (same convention as the Ollama native path).
+                if thinking and content:
+                    full_text = f"<think>{thinking}</think>\n{content}"
+                elif thinking:
+                    full_text = f"<think>{thinking}"   # truncated — no closing tag
+                else:
+                    full_text = content
+
+                state.messages.append(
+                    ChatMessageAssistant(content=full_text, model=model_name, source="generate")
+                )
+                state.output = ModelOutput.from_content(model=model_name, content=full_text)
+                log.info(
+                    "[LLAMA-SERVER] %s  sample=%s  reasoning=%dch  answer=%dch",
+                    model_name, state.sample_id, len(thinking), len(content),
+                )
+                return state
+
             t0 = time.monotonic()
             state = await generate_fn(state)
             elapsed = time.monotonic() - t0

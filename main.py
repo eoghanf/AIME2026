@@ -590,8 +590,12 @@ def main() -> None:
             prev_seed_env = os.environ.get("AIME_RUN_SEED")
             prev_temp_env = os.environ.get("AIME_TEMP")
             prev_topp_env = os.environ.get("AIME_TOP_P")
+            prev_base_env = os.environ.get("AIME_OPENAI_BASE_URL")
             if base_url:
                 os.environ["OPENAI_BASE_URL"] = base_url
+                # Task solver intercepts and calls this endpoint natively
+                # (bypassing the OpenAI SDK and its 600s default timeout).
+                os.environ["AIME_OPENAI_BASE_URL"] = base_url
             os.environ["AIME_RUN_SEED"] = str(run_seed)
             os.environ["AIME_TEMP"] = str(RUN_TEMPERATURE)
             os.environ["AIME_TOP_P"] = str(RUN_TOP_P)
@@ -665,6 +669,10 @@ def main() -> None:
                     os.environ.pop("AIME_TOP_P", None)
                 else:
                     os.environ["AIME_TOP_P"] = prev_topp_env
+                if prev_base_env is None:
+                    os.environ.pop("AIME_OPENAI_BASE_URL", None)
+                else:
+                    os.environ["AIME_OPENAI_BASE_URL"] = prev_base_env
                 if base_url:
                     if prev_base_url is None:
                         os.environ.pop("OPENAI_BASE_URL", None)
